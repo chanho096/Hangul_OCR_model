@@ -28,6 +28,9 @@ SHUFFLE_DATA = False
 AUGMENTATION = True
 BACKBONE_TRAINING = True
 
+PREDICTION = False
+TRAINING = True
+
 
 class CustomGenerator(tf.keras.utils.Sequence):
     def __init__(self, data_dir, file_list, label_number, batch_size, class_count, augmentation=None):
@@ -188,7 +191,7 @@ def main():
     # command: tensorboard --logdir logs
     log_dir = os.path.join(current_dir, "logs")
     log_dir = os.path.join(log_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, update_freq=1000)
 
     # create checkpoint callback
     checkpoint_path = os.path.join(checkpoint_dir, "cp-{epoch:04d}.ckpt")
@@ -209,15 +212,47 @@ def main():
     # ----- training -----
 
     # training
-    model.fit_generator(generator=training_batch_generator,
-                        epochs=EPOCH_COUNT,
-                        callbacks=[tensorboard_callback, checkpoint_callback],
-                        validation_data=test_batch_generator)
+    if TRAINING:
+        model.fit_generator(generator=training_batch_generator,
+                            epochs=EPOCH_COUNT,
+                            callbacks=[tensorboard_callback, checkpoint_callback],
+                            validation_data=test_batch_generator)
 
-    # save model
-    model_path = os.path.join(model_dir, 'hangul_OCR_model.h5')
-    model.save(model_path)
-    print("training complete")
+        # save model
+        model_path = os.path.join(model_dir, 'hangul_OCR_model.h5')
+        model.save(model_path)
+        print("training complete")
+
+    # ----- prediction -----
+
+    # prediction
+    if PREDICTION:
+        test_images = np.load("test.npy")
+        test_size = test_images.shape[0]
+
+        resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
+        for i in range(0, test_size):
+            image = cv.resize(resized_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
+            image[image < 120] = 0
+            resized_images[i] = image
+        input_x = resized_images / 255
+
+        output = model.predict(input_x)
+        y1 = output[0]
+        y2 = output[1]
+        y3 = output[2]
+        for i in range(0, y1.shape[0]):
+            onset_number = y1[i].argmax()
+            nucleus_number = y2[i].argmax()
+            coda_number = y3[i].argmax()
+
+            char_number = hangul.hangul_incode_to_number(onset_number, nucleus_number, coda_number)
+            char = cg.number_to_char(char_number)
+            accuracy = y1[i][onset_number] * y2[i][nucleus_number] * y3[i][coda_number]
+
+            print(f"{char}, accuracy:{round(accuracy * 100, 2)}")
+            cv.imshow("hi", resized_images[i])
+            cv.waitKey()
 
 
 main()
