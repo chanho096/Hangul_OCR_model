@@ -1,1 +1,1 @@
-# Hangul_OCR_model
+# Hangul_OCR
