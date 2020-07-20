@@ -150,7 +150,11 @@ def main():
 
     # set Xception backbone model
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
+    """
     backbone_model = tf.keras.applications.xception.Xception \
+        (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
+    """
+    backbone_model = tf.keras.applications.resnet50.ResNet50 \
         (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
     backbone_model.trainable = BACKBONE_TRAINING
     backbone_output = backbone_model.output
