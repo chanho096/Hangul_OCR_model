@@ -33,8 +33,8 @@ def create_data(cg, tg, font_dir, created_data_path):
             os.mkdir(font_image_dir)
 
         font_size = np.random.randint(low=80, high=150, size=size)
-        size_width = np.random.randint(25, 26, size)
-        size_height = np.random.randint(25, 26, size)
+        size_width = np.random.randint(25, 60, size)
+        size_height = np.random.randint(25, 60, size)
 
         for j in range(0, size):
             character = cg.number_to_char(j)

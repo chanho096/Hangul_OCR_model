@@ -20,10 +20,10 @@ LAYER_1_1_NEURON_COUNT = 512
 LAYER_2_1_NEURON_COUNT = 512
 LAYER_3_1_NEURON_COUNT = 512
 
-EPOCH_COUNT = 100
+EPOCH_COUNT = 5
 TEST_RATE = 0.05
-LOAD_FROM_NPY = False
-CREATE_DATA = True
+LOAD_FROM_NPY = True
+CREATE_DATA = False
 SHUFFLE_DATA = False
 AUGMENTATION = True
 BACKBONE_TRAINING = True
@@ -49,10 +49,9 @@ class CustomGenerator(tf.keras.utils.Sequence):
         image_list = [cv.imread(os.path.join(self.data_dir, file_name)) for file_name in file_list]
         for i in range(0, len(image_list)):
             image = image_list[i]
-            image = cv.resize(image, dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]))
-
+            image = cv.resize(image, dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
             if self.augmentation is not None:
-                image = self.augmentation.random_transform(image)
+                image = self.augmentation.randomize(image, INPUT_SHAPE[0], INPUT_SHAPE[1])
             image_list[i] = image
         batch_x = np.array(image_list) / 255
 
@@ -122,29 +121,16 @@ def main():
         x_train_file_list, y_train = shuffle(x_train_file_list, y_train)
         x_test_file_list, y_test = shuffle(x_test_file_list, y_test)
 
-    ag = aug.AugmentationGenerator()
-    ag.ORIGINAL_RATE = 0.2
-    ag.MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.6
-    ag.SHEARING_PROBABILITY = 0.6
-
-    for i in range(0, 100):
-        print(cg.number_to_char(y_train[i]))
-        image = cv.imread(os.path.join(data_dir, x_train_file_list[i]))
-        image = cv.resize(image, (70, 70), interpolation=cv.INTER_CUBIC)
-        # image = ag.randomize(image, 74, 74)
-        cv.imshow("hi", image)
-        cv.waitKey()
-
-    return
     # ----- set generator -----
 
     # image augmentation
-    augmentation = tf.keras.preprocessing.image.ImageDataGenerator(
-        width_shift_range=0.05,
-        height_shift_range=0.05,
-    )
     if not AUGMENTATION:
         augmentation = None
+    else:
+        augmentation = aug.AugmentationGenerator()
+        augmentation.ORIGINAL_RATE = 0.3
+        augmentation.SHEARING_PROBABILITY = 0.5
+        augmentation.MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
 
     # custom generator
     training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
@@ -221,6 +207,7 @@ def main():
                   metrics=['accuracy'], loss_weights=[1.0, 1.0, 1.0])
 
     # ----- training -----
+
     # training
     model.fit_generator(generator=training_batch_generator,
                         epochs=EPOCH_COUNT,
