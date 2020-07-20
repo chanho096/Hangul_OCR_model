@@ -22,8 +22,8 @@ LAYER_3_1_NEURON_COUNT = 512
 
 EPOCH_COUNT = 100
 TEST_RATE = 0.05
-LOAD_FROM_NPY = True
-CREATE_DATA = False
+LOAD_FROM_NPY = False
+CREATE_DATA = True
 SHUFFLE_DATA = False
 AUGMENTATION = True
 BACKBONE_TRAINING = True
@@ -96,7 +96,8 @@ def main():
     # create data
     if CREATE_DATA:
         loader.create_data(cg, tg, font_dir, created_data_path)
-    elif LOAD_FROM_NPY:
+
+    if LOAD_FROM_NPY:
         x_train_file_list = np.load('x_train_file_list.npy')
         y_train = np.load('y_train.npy')
         x_test_file_list = np.load('x_test_file_list.npy')
@@ -121,15 +122,19 @@ def main():
         x_train_file_list, y_train = shuffle(x_train_file_list, y_train)
         x_test_file_list, y_test = shuffle(x_test_file_list, y_test)
 
-    image = cv.imread(os.path.join(data_dir, x_train_file_list[0]))
-    print(image.shape)
-    cv.imshow("hi", image)
-    cv.waitKey()
-    image = aug.char_to_binary_image(image)
-    image = aug.cropping(image)
-    image = aug.padding(*image)
-    cv.imshow("hi", image)
-    cv.waitKey()
+    ag = aug.AugmentationGenerator()
+    ag.ORIGINAL_RATE = 0.2
+    ag.MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.6
+    ag.SHEARING_PROBABILITY = 0.6
+
+    for i in range(0, 100):
+        print(cg.number_to_char(y_train[i]))
+        image = cv.imread(os.path.join(data_dir, x_train_file_list[i]))
+        image = cv.resize(image, (70, 70), interpolation=cv.INTER_CUBIC)
+        # image = ag.randomize(image, 74, 74)
+        cv.imshow("hi", image)
+        cv.waitKey()
+
     return
     # ----- set generator -----
 
@@ -226,8 +231,6 @@ def main():
     model_path = os.path.join(model_dir, 'hangul_OCR_model.h5')
     model.save(model_path)
     print("training complete")
-
-
 
 
 main()

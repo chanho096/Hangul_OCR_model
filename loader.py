@@ -33,14 +33,19 @@ def create_data(cg, tg, font_dir, created_data_path):
             os.mkdir(font_image_dir)
 
         font_size = np.random.randint(low=80, high=150, size=size)
+        size_width = np.random.randint(25, 26, size)
+        size_height = np.random.randint(25, 26, size)
+
         for j in range(0, size):
             character = cg.number_to_char(j)
 
             image = tg.char_to_image(character, font_size[j], i,
                                      (255, 255, 255))
-            image = image.resize((64, 64))
-            image = np.array(image, dtype=np.uint8).reshape(64, 64, 3)
+            image = image.resize((size_width[j], size_height[j]))
+            image = np.array(image, dtype=np.uint8).reshape(size_height[j], size_width[j], 3)
+            image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
             image = cv.bitwise_not(image)
+            image[image < 255] = 0
             cv.imwrite(os.path.join(font_image_dir, f"{j}.png"), image)
 
         print(f"created {font_file_list[i]} image")
