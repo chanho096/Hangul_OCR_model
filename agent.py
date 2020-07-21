@@ -19,6 +19,7 @@ BATCH_SIZE = 64
 LAYER_1_1_NEURON_COUNT = 512
 LAYER_2_1_NEURON_COUNT = 512
 LAYER_3_1_NEURON_COUNT = 512
+LAYER_4_1_NEURON_COUNT = 512
 
 EPOCH_COUNT = 5
 TEST_RATE = 0.05
@@ -28,8 +29,8 @@ SHUFFLE_DATA = False
 AUGMENTATION = True
 BACKBONE_TRAINING = True
 
-PREDICTION = False
-TRAINING = True
+PREDICTION = True
+TRAINING = False
 
 
 class CustomGenerator(tf.keras.utils.Sequence):
@@ -63,14 +64,17 @@ class CustomGenerator(tf.keras.utils.Sequence):
         y1 = np.zeros((size, self.class_count[0]))
         y2 = np.zeros((size, self.class_count[1]))
         y3 = np.zeros((size, self.class_count[2]))
+        y4 = np.zeros((size, self.class_count[3]))
 
         for i in range(0, size):
             onset_number, nucleus_number, coda_number = hangul.hangul_decode_by_number(label_number[i])
+            vertical_number, horizontal_number = hangul.nucleus_separation(nucleus_number)
             y1[i] = tf.keras.utils.to_categorical(onset_number, self.class_count[0])
-            y2[i] = tf.keras.utils.to_categorical(nucleus_number, self.class_count[1])
-            y3[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[2])
+            y2[i] = tf.keras.utils.to_categorical(vertical_number, self.class_count[1])
+            y3[i] = tf.keras.utils.to_categorical(horizontal_number, self.class_count[2])
+            y4[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
 
-        batch_y = [y1, y2, y3]
+        batch_y = [y1, y2, y3, y4]
 
         return batch_x, batch_y
 
@@ -138,22 +142,18 @@ def main():
     # custom generator
     training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
                                                batch_size=BATCH_SIZE, augmentation=augmentation,
-                                               class_count=[hangul.ONSET_COUNT,
-                                                            hangul.NUCLEUS_COUNT, hangul.CODA_COUNT],
-                                               )
+                                               class_count=[hangul.ONSET_COUNT, hangul.NUCLEUS_V_COUNT,
+                                                            hangul.NUCLEUS_H_COUNT, hangul.CODA_COUNT])
+
     test_batch_generator = CustomGenerator(data_dir, x_test_file_list, y_test,
                                            batch_size=BATCH_SIZE, augmentation=None,
-                                           class_count=[hangul.ONSET_COUNT,
-                                                        hangul.NUCLEUS_COUNT, hangul.CODA_COUNT])
+                                           class_count=[hangul.ONSET_COUNT, hangul.NUCLEUS_V_COUNT,
+                                                        hangul.NUCLEUS_H_COUNT, hangul.CODA_COUNT])
 
     # ----- model design -----
 
-    # set Xception backbone model
+    # set Resnet50 backbone model
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
-    """
-    backbone_model = tf.keras.applications.xception.Xception \
-        (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
-    """
     backbone_model = tf.keras.applications.resnet50.ResNet50 \
         (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
     backbone_model.trainable = BACKBONE_TRAINING
@@ -170,18 +170,26 @@ def main():
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_2_1_NEURON_COUNT, activation='relu')(x)
-    nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_COUNT, activation='softmax', name='nucleus_output')(x)
+    v_nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_V_COUNT,
+                                            activation='softmax', name='v_nucleus_output')(x)
 
     x = backbone_output
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_3_1_NEURON_COUNT, activation='relu')(x)
+    h_nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_H_COUNT,
+                                            activation='softmax', name='h_nucleus_output')(x)
+
+    x = backbone_output
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dense(LAYER_4_1_NEURON_COUNT, activation='relu')(x)
     coda_layer = tf.keras.layers.Dense(hangul.CODA_COUNT, activation='softmax', name='coda_output')(x)
 
     # set training model
     model = tf.keras.Model(
         inputs=[input_layer],
-        outputs=[onset_layer, nucleus_layer, coda_layer]
+        outputs=[onset_layer, v_nucleus_layer, h_nucleus_layer, coda_layer]
     )
 
     # load latest trained weight
@@ -204,14 +212,14 @@ def main():
 
     # compile model
     optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, decay=0.00005)
-    # optimizer = tf.keras.optimizers.SGD(lr=LEARNING_RATE, nesterov=True, momentum=0.9)
     model.compile(optimizer=optimizer,
                   loss={
                       "onset_output": tf.keras.losses.CategoricalCrossentropy(),
-                      "nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
+                      "v_nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
+                      "h_nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
                       "coda_output": tf.keras.losses.CategoricalCrossentropy()
                   },
-                  metrics=['accuracy'], loss_weights=[1.0, 1.0, 1.0])
+                  metrics=['accuracy'], loss_weights=[1.0, 1.0, 1.0, 1.0])
 
     # ----- training -----
 
@@ -231,12 +239,12 @@ def main():
 
     # prediction
     if PREDICTION:
-        test_images = np.load("test.npy")
+        test_images = np.load("test.npy", allow_pickle=True)
         test_size = test_images.shape[0]
 
         resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
         for i in range(0, test_size):
-            image = cv.resize(resized_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
+            image = cv.resize(test_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
             image[image < 120] = 0
             resized_images[i] = image
         input_x = resized_images / 255
@@ -245,14 +253,20 @@ def main():
         y1 = output[0]
         y2 = output[1]
         y3 = output[2]
+        y4 = output[3]
         for i in range(0, y1.shape[0]):
             onset_number = y1[i].argmax()
-            nucleus_number = y2[i].argmax()
-            coda_number = y3[i].argmax()
+            vertical_number = y2[i].argmax()
+            horizontal_number = y3[i].argmax()
+            coda_number = y4[i].argmax()
 
-            char_number = hangul.hangul_incode_to_number(onset_number, nucleus_number, coda_number)
+            nucleus_number = hangul.nucleus_integration(vertical_number, horizontal_number)
+            if nucleus_number == -1:
+                nucleus_number = vertical_number
+
+            char_number = hangul.hangul_encode_to_number(onset_number, nucleus_number, coda_number)
             char = cg.number_to_char(char_number)
-            accuracy = y1[i][onset_number] * y2[i][nucleus_number] * y3[i][coda_number]
+            accuracy = y1[i][onset_number] * y2[i][vertical_number] * y3[i][horizontal_number] * y4[i][coda_number]
 
             print(f"{char}, accuracy:{round(accuracy * 100, 2)}")
             cv.imshow("hi", resized_images[i])
