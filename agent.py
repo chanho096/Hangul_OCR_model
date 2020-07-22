@@ -24,10 +24,13 @@ LAYER_4_1_NEURON_COUNT = 512
 EPOCH_COUNT = 5
 TEST_RATE = 0.05
 LOAD_FROM_NPY = True
+LOAD_FROM_CREATED = False
 CREATE_DATA = False
 SHUFFLE_DATA = False
 AUGMENTATION = True
-BACKBONE_TRAINING = True
+BACKBONE_TRAINING = False
+HANGUL_MODEL_TRAINING = False
+ASCII_MODEL_TRAINING = True
 
 PREDICTION = True
 TRAINING = False
@@ -67,12 +70,20 @@ class CustomGenerator(tf.keras.utils.Sequence):
         y4 = np.zeros((size, self.class_count[3]))
 
         for i in range(0, size):
-            onset_number, nucleus_number, coda_number = hangul.hangul_decode_by_number(label_number[i])
-            vertical_number, horizontal_number = hangul.nucleus_separation(nucleus_number)
-            y1[i] = tf.keras.utils.to_categorical(onset_number, self.class_count[0])
-            y2[i] = tf.keras.utils.to_categorical(vertical_number, self.class_count[1])
-            y3[i] = tf.keras.utils.to_categorical(horizontal_number, self.class_count[2])
-            y4[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
+            if label_number[i] < hangul.HANGUL_COUNT:
+                onset_number, nucleus_number, coda_number = hangul.hangul_decode_by_number(label_number[i])
+
+                y1[i] = tf.keras.utils.to_categorical(0, self.class_count[0])
+                y2[i] = tf.keras.utils.to_categorical(onset_number + 1, self.class_count[1])
+                y3[i] = tf.keras.utils.to_categorical(nucleus_number + 1, self.class_count[2])
+                y4[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
+            else:
+                ascii_number = label_number[i] - hangul.HANGUL_COUNT + 1
+
+                y1[i] = tf.keras.utils.to_categorical(ascii_number, self.class_count[0])
+                y2[i] = tf.keras.utils.to_categorical(0, self.class_count[1])
+                y3[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
+                y4[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
 
         batch_y = [y1, y2, y3, y4]
 
@@ -108,6 +119,15 @@ def main():
         y_train = np.load('y_train.npy')
         x_test_file_list = np.load('x_test_file_list.npy')
         y_test = np.load('y_test.npy')
+
+    elif LOAD_FROM_CREATED:
+        file_list, label_number = loader.created_data_loader(created_data_path, cg)
+        label_number = np.array(label_number, dtype=np.int)
+        file_list_shuffled, label_shuffled = shuffle(file_list, label_number)
+        x_train_file_list, x_test_file_list, y_train, y_test = \
+            train_test_split(file_list_shuffled, label_shuffled,
+                             test_size=TEST_RATE, random_state=1)
+
     else:
         # load data
         file_list, label_number = loader.data_loader(cg, created_data_path, etri_data_path, etri_json_path)
@@ -142,13 +162,15 @@ def main():
     # custom generator
     training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
                                                batch_size=BATCH_SIZE, augmentation=augmentation,
-                                               class_count=[hangul.ONSET_COUNT, hangul.NUCLEUS_V_COUNT,
-                                                            hangul.NUCLEUS_H_COUNT, hangul.CODA_COUNT])
+                                               class_count=[character_count - hangul.HANGUL_COUNT + 1,
+                                                            hangul.ONSET_COUNT + 1, hangul.NUCLEUS_COUNT + 1,
+                                                            hangul.CODA_COUNT])
 
     test_batch_generator = CustomGenerator(data_dir, x_test_file_list, y_test,
                                            batch_size=BATCH_SIZE, augmentation=None,
-                                           class_count=[hangul.ONSET_COUNT, hangul.NUCLEUS_V_COUNT,
-                                                        hangul.NUCLEUS_H_COUNT, hangul.CODA_COUNT])
+                                           class_count=[character_count - hangul.HANGUL_COUNT + 1,
+                                                        hangul.ONSET_COUNT + 1, hangul.NUCLEUS_COUNT + 1,
+                                                        hangul.CODA_COUNT])
 
     # ----- model design -----
 
@@ -156,7 +178,6 @@ def main():
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
     backbone_model = tf.keras.applications.resnet50.ResNet50 \
         (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
-    backbone_model.trainable = BACKBONE_TRAINING
     backbone_output = backbone_model.output
 
     # set output layer
@@ -164,33 +185,48 @@ def main():
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_1_1_NEURON_COUNT, activation='relu')(x)
-    onset_layer = tf.keras.layers.Dense(hangul.ONSET_COUNT, activation='softmax', name='onset_output')(x)
+    onset_layer = tf.keras.layers.Dense(hangul.ONSET_COUNT + 1, activation='softmax', name='onset_output')(x)
 
     x = backbone_output
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_2_1_NEURON_COUNT, activation='relu')(x)
-    v_nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_V_COUNT,
-                                            activation='softmax', name='v_nucleus_output')(x)
+    nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_COUNT + 1,
+                                          activation='softmax', name='nucleus_output')(x)
 
     x = backbone_output
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_3_1_NEURON_COUNT, activation='relu')(x)
-    h_nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_H_COUNT,
-                                            activation='softmax', name='h_nucleus_output')(x)
+    coda_layer = tf.keras.layers.Dense(hangul.CODA_COUNT, activation='softmax', name='coda_output')(x)
 
     x = backbone_output
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_4_1_NEURON_COUNT, activation='relu')(x)
-    coda_layer = tf.keras.layers.Dense(hangul.CODA_COUNT, activation='softmax', name='coda_output')(x)
+    ascii_layer = tf.keras.layers.Dense(character_count - hangul.HANGUL_COUNT + 1,
+                                        activation='softmax', name='ascii_output')(x)
 
     # set training model
+    hangul_model = tf.keras.Model(
+        inputs=[input_layer],
+        outputs=[onset_layer, nucleus_layer, coda_layer]
+    )
+    hangul_model.trainable = HANGUL_MODEL_TRAINING
+
+    ascii_model = tf.keras.Model(
+        inputs=[input_layer],
+        outputs=[ascii_layer]
+    )
+    ascii_model.trainable = ASCII_MODEL_TRAINING
+
+    backbone_model.trainable = BACKBONE_TRAINING
     model = tf.keras.Model(
         inputs=[input_layer],
-        outputs=[onset_layer, v_nucleus_layer, h_nucleus_layer, coda_layer]
+        outputs=[ascii_model.output] + hangul_model.output
     )
+
+    model.summary()
 
     # load latest trained weight
     latest_weight = tf.train.latest_checkpoint(checkpoint_dir)
@@ -210,16 +246,21 @@ def main():
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         checkpoint_path, verbose=1, save_weights_only=True)
 
+    # loss weights
+    ascii_weights = 1.0 if ASCII_MODEL_TRAINING else 0.0
+    hangul_weights = 1.0 if HANGUL_MODEL_TRAINING else 0.0
+    loss_weights = [ascii_weights] + ([hangul_weights] * 3)
+
     # compile model
     optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, decay=0.00005)
     model.compile(optimizer=optimizer,
                   loss={
+                      "ascii_output": tf.keras.losses.CategoricalCrossentropy(),
                       "onset_output": tf.keras.losses.CategoricalCrossentropy(),
-                      "v_nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
-                      "h_nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
+                      "nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
                       "coda_output": tf.keras.losses.CategoricalCrossentropy()
                   },
-                  metrics=['accuracy'], loss_weights=[1.0, 1.0, 1.0, 1.0])
+                  metrics=['accuracy'], loss_weights=loss_weights)
 
     # ----- training -----
 
@@ -254,19 +295,32 @@ def main():
         y2 = output[1]
         y3 = output[2]
         y4 = output[3]
+
         for i in range(0, y1.shape[0]):
-            onset_number = y1[i].argmax()
-            vertical_number = y2[i].argmax()
-            horizontal_number = y3[i].argmax()
+            ascii_number = y1[i].argmax()
+            onset_number = y2[i].argmax()
+            nucleus_number = y3[i].argmax()
             coda_number = y4[i].argmax()
 
-            nucleus_number = hangul.nucleus_integration(vertical_number, horizontal_number)
-            if nucleus_number == -1:
-                nucleus_number = vertical_number
+            if ascii_number != 0:
+                # ascii character
+                char_number = ascii_number + hangul.HANGUL_COUNT
+                accuracy = y1[i][ascii_number]
 
-            char_number = hangul.hangul_encode_to_number(onset_number, nucleus_number, coda_number)
-            char = cg.number_to_char(char_number)
-            accuracy = y1[i][onset_number] * y2[i][vertical_number] * y3[i][horizontal_number] * y4[i][coda_number]
+            elif onset_number == 0 or nucleus_number == 0:
+                # no character
+                char_number = -1
+                accuracy = y1[i][ascii_number] * y2[i][onset_number] * y3[i][nucleus_number] * y4[i][coda_number]
+
+            else:
+                # hangul character
+                char_number = hangul.hangul_encode_to_number(onset_number - 1, nucleus_number - 1, coda_number)
+                accuracy = y2[i][onset_number] * y3[i][nucleus_number] * y4[i][coda_number]
+
+            if char_number != -1:
+                char = cg.number_to_char(char_number)
+            else:
+                char = None
 
             print(f"{char}, accuracy:{round(accuracy * 100, 2)}")
             cv.imshow("hi", resized_images[i])

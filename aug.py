@@ -125,6 +125,7 @@ class AugmentationGenerator:
     MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
     RESIZING_PROBABILITY = 0.0
     SHEARING_PROBABILITY = 0.0
+    MEDIAN_BLURRING_PROBABILITY = 0.0
 
     def __init__(self, seed=None):
         if seed is None:
@@ -140,7 +141,7 @@ class AugmentationGenerator:
         # Cropping
         b_image, _, _ = cropping(b_image)
 
-        p = np.random.uniform(0, 1, 3)
+        p = np.random.uniform(0, 1, 4)
         # Original
         if p[0] < self.ORIGINAL_RATE:
             b_image = cv.resize(b_image, (width, height))
@@ -157,6 +158,12 @@ class AugmentationGenerator:
         if p[2] < self.MORPHOLOGICAL_TRANSFORM_PROBABILITY:
             kernel_size = 3
             b_image = morphological_transform(b_image, kernel_size)
+
+        # Median Blurring
+        if p[3] < self.MEDIAN_BLURRING_PROBABILITY:
+            kernel_size = np.random.randint(1, 4, 1)
+            kernel_size = kernel_size * 2 + 1
+            b_image = cv.medianBlur(b_image, kernel_size)
 
         # Character Resize
         scale = np.random.uniform(0.7, 1, 1)

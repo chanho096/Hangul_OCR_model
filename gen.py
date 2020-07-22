@@ -33,30 +33,25 @@ class CharacterGenerator:
         문자들은 utf-16 형식이다.
         block 단위로 사용되는 문자 범위를 지정할 수 있다.
     """
-    """
+
     _ASCII_NUMBER_FIRST = 0x0030
     _ASCII_NUMBER_LAST = 0x0039
     _ASCII_UPPER_ALPHABET_FIRST = 0x0041
     _ASCII_UPPER_ALPHABET_LAST = 0x005A
     _ASCII_LOWER_ALPHABET_FIRST = 0x0061
     _ASCII_LOWER_ALPHABET_LAST = 0x007A
-    """
     _HANGUL_SYLLABLES_FIRST = 0xAC00
     _HANGUL_SYLLABLES_LAST = 0xD7A3
 
     def __init__(self):
-        """
-        self._blocks = [self._ASCII_NUMBER_FIRST,
+        self._blocks = [self._HANGUL_SYLLABLES_FIRST,
+                        self._ASCII_NUMBER_FIRST,
                         self._ASCII_UPPER_ALPHABET_FIRST,
-                        self._ASCII_LOWER_ALPHABET_FIRST,
-                        self._HANGUL_SYLLABLES_FIRST]
-        self._blocks_size = [int(self._ASCII_NUMBER_LAST - self._ASCII_NUMBER_FIRST + 1),
-                             int(self._ASCII_UPPER_ALPHABET_LAST - self._ASCII_UPPER_ALPHABET_FIRST + 1),
-                             int(self._ASCII_LOWER_ALPHABET_LAST - self._ASCII_LOWER_ALPHABET_FIRST + 1),
-                             int(self._HANGUL_SYLLABLES_LAST - self._HANGUL_SYLLABLES_FIRST + 1)]
-        """
-        self._blocks = [self._HANGUL_SYLLABLES_FIRST]
-        self._blocks_size = [int(self._HANGUL_SYLLABLES_LAST - self._HANGUL_SYLLABLES_FIRST + 1)]
+                        self._ASCII_LOWER_ALPHABET_FIRST]
+        self._blocks_size = [int(self._HANGUL_SYLLABLES_LAST - self._HANGUL_SYLLABLES_FIRST + 1),
+                             int(self._ASCII_NUMBER_LAST - self._ASCII_NUMBER_FIRST + 1),
+                             int(self._ASCII_UPPER_ALPHABET_LAST - self._ASCII_UPPER_ALPHABET_FIRST),
+                             int(self._ASCII_LOWER_ALPHABET_LAST - self._ASCII_LOWER_ALPHABET_FIRST)]
         self._blocks_count = len(self._blocks_size)
 
     def get_character_count(self):
