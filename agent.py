@@ -28,9 +28,9 @@ LOAD_FROM_CREATED = False
 CREATE_DATA = False
 SHUFFLE_DATA = False
 AUGMENTATION = True
-BACKBONE_TRAINING = False
-HANGUL_MODEL_TRAINING = False
-ASCII_MODEL_TRAINING = True
+BACKBONE_TRAINING = True
+HANGUL_MODEL_TRAINING = True
+ASCII_MODEL_TRAINING = False
 
 PREDICTION = True
 TRAINING = False
@@ -59,6 +59,7 @@ class CustomGenerator(tf.keras.utils.Sequence):
             image = cv.resize(image, dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
             if self.augmentation is not None:
                 image = self.augmentation.randomize(image, INPUT_SHAPE[0], INPUT_SHAPE[1])
+
             image_list[i] = image
         batch_x = np.array(image_list) / 255
 
@@ -155,9 +156,11 @@ def main():
         augmentation = None
     else:
         augmentation = aug.AugmentationGenerator()
-        augmentation.ORIGINAL_RATE = 0.3
+        augmentation.ORIGINAL_RATE = 0.2
         augmentation.SHEARING_PROBABILITY = 0.5
-        augmentation.MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
+        augmentation.RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.5
+        augmentation.MEDIAN_BLURRING_PROBABILITY = 0.1
+        augmentation.NOISING_PROBABILITY = 0.3
 
     # custom generator
     training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
@@ -286,7 +289,7 @@ def main():
         resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
         for i in range(0, test_size):
             image = cv.resize(test_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
-            image[image < 120] = 0
+            image[image < 100] = 0
             resized_images[i] = image
         input_x = resized_images / 255
 
@@ -302,6 +305,7 @@ def main():
             nucleus_number = y3[i].argmax()
             coda_number = y4[i].argmax()
 
+            ascii_number = 0
             if ascii_number != 0:
                 # ascii character
                 char_number = ascii_number + hangul.HANGUL_COUNT
@@ -324,7 +328,9 @@ def main():
 
             print(f"{char}, accuracy:{round(accuracy * 100, 2)}")
             cv.imshow("hi", resized_images[i])
-            cv.waitKey()
+            k = cv.waitKey()
+            if k == ord("c"):
+                cv.imwrite("k.jpg", resized_images[i])
 
 
 main()

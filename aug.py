@@ -120,12 +120,105 @@ def shearing(b_image, shear_weight):
     return b_image
 
 
+def noising(b_image, level):
+    """
+        이미지에 무작위 노이즈를 생성하고 보정합니다.
+    """
+    size = b_image.flatten().shape[0]
+    random_value = np.random.uniform(0, 1, size)
+    noise = np.zeros(random_value.shape, dtype=np.uint8)
+
+    noise[random_value <= level] = 255
+    noise = noise.reshape(b_image.shape)
+
+    b_image = cv.bitwise_xor(b_image, noise)
+    return b_image
+
+
+def random_morphological_transform(b_image, level, kernel, m_type):
+    """
+        이미지를 무작위 필터로 morphological transform 적용합니다.
+
+        m_type == 0: morphological erosion
+        m_type == 1: morphological dilation
+    """
+    kernel_size = kernel.shape[0]
+
+    result = b_image.copy()
+    h_size = b_image.shape[0] - kernel_size + 1
+    w_size = b_image.shape[1] - kernel_size + 1
+
+    # Vectorized Solution - using numpy
+    # get window
+    window_shape = (h_size, w_size) + kernel.shape
+    window_strides = b_image.strides + b_image.strides
+    window = np.lib.stride_tricks.as_strided(b_image, window_shape, window_strides)
+    window = window.reshape((-1, kernel_size, kernel_size))
+
+    # get random window
+    rnd = np.random.uniform(0, 1, window.shape[0])
+    index = np.argwhere(rnd < level)
+    window = window[index].reshape((-1, kernel_size, kernel_size))
+
+    if m_type == 0:
+        # morphological erosion
+        kernel = np.bitwise_not(kernel)
+        masked_window = np.bitwise_or(window, kernel)
+        chk = np.all(masked_window != 0, axis=1)
+        chk = np.all(chk != 0, axis=1)
+        adj = np.zeros(shape=(chk.shape[0], 1), dtype=np.uint8)
+        adj[chk] = 1
+    else:
+        # morphological dilation
+        masked_window = np.bitwise_and(window, kernel)
+        chk = np.bitwise_not(np.all(masked_window == 0, axis=1))
+        chk = np.all(chk == 0, axis=1)
+        adj = np.ones(shape=(chk.shape[0], 1), dtype=np.uint8)
+        adj[chk] = 0
+
+    # adjust
+    adj = adj * 255
+    k = int(kernel_size / 2)
+    h = (index // w_size).astype(np.int) + k
+    w = np.mod(index, w_size).astype(np.int) + k
+
+    result[h, w] = adj
+
+    """
+    # loop 이용... 너무 느리다.
+    k = int(kernel_size / 2)
+    rnd_idx = -1
+
+    for h in range(0, h_size):
+        for w in range(0, w_size):
+            rnd_idx = rnd_idx + 1
+            if rnd_check[rnd_idx]:
+                # random skip
+                continue
+
+            window = b_image[h:h+kernel_size, w:w+kernel_size]
+            window = cv.bitwise_and(window, kernel)
+
+            if m_type == 0:
+                # morphological erosion
+                adj = 255 if np.all(window != 0) else 0
+            else:
+                # morphological dilation
+                adj = 0 if np.all(window == 0) else 255
+
+            result[k + h, k + w] = adj
+    """
+
+    return result
+
+
 class AugmentationGenerator:
     ORIGINAL_RATE = 0.2
-    MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
+    RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
     RESIZING_PROBABILITY = 0.0
     SHEARING_PROBABILITY = 0.0
     MEDIAN_BLURRING_PROBABILITY = 0.0
+    NOISING_PROBABILITY = 0.0
 
     def __init__(self, seed=None):
         if seed is None:
@@ -141,7 +234,7 @@ class AugmentationGenerator:
         # Cropping
         b_image, _, _ = cropping(b_image)
 
-        p = np.random.uniform(0, 1, 4)
+        p = np.random.uniform(0, 1, 5)
         # Original
         if p[0] < self.ORIGINAL_RATE:
             b_image = cv.resize(b_image, (width, height))
@@ -154,15 +247,17 @@ class AugmentationGenerator:
             shear_weight = shear_weight * 1.6  # shear_weight 는 [-0.8 ~ 0.8]
             b_image = shearing(b_image, shear_weight)
 
-        # Morphological Transform
-        if p[2] < self.MORPHOLOGICAL_TRANSFORM_PROBABILITY:
-            kernel_size = 3
-            b_image = morphological_transform(b_image, kernel_size)
+        # Random Morphological Transform
+        if p[2] < self.RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY:
+            kernel = np.ones((3, 3), dtype=np.uint8) * 255
+            b_image = random_morphological_transform(b_image, 0.5, kernel, 1)
+            b_image = random_morphological_transform(b_image, 0.5, kernel, 0)
 
         # Median Blurring
         if p[3] < self.MEDIAN_BLURRING_PROBABILITY:
-            kernel_size = np.random.randint(1, 4, 1)
-            kernel_size = kernel_size * 2 + 1
+            kernel_size = np.random.randint(1, 3, 1)
+            kernel_size = kernel_size[0] * 2 + 1
+
             b_image = cv.medianBlur(b_image, kernel_size)
 
         # Character Resize
@@ -171,7 +266,7 @@ class AugmentationGenerator:
         h = int(height * scale)
         b_image = cv.resize(b_image, (w, h))
 
-        # Padding
+        # Random Padding
         x_length = width - w
         y_length = height - h
 
@@ -191,6 +286,12 @@ class AugmentationGenerator:
             bottom = bottom + random_dy
 
         b_image = cv.copyMakeBorder(b_image, top, bottom, left, right, cv.BORDER_CONSTANT, 0)
+
+        # Noising
+        if p[4] < self.NOISING_PROBABILITY:
+            noise_level = np.random.uniform(0.05, 0.15, 1)[0]
+            b_image = noising(b_image, noise_level)
+
         # Return
         b_image = to_output_image(b_image)
 
