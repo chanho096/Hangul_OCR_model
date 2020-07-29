@@ -283,7 +283,8 @@ def main():
 
     # prediction
     if PREDICTION:
-        test_images = np.load("test.npy", allow_pickle=True)
+        test_images = np.load("test_x.npy", allow_pickle=True)
+        test_labels = np.load("test_y.npy", allow_pickle=True)
         test_size = test_images.shape[0]
 
         resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
@@ -299,7 +300,14 @@ def main():
         y3 = output[2]
         y4 = output[3]
 
+        total_count = 0
+        hit_count = 0
+
         for i in range(0, y1.shape[0]):
+            if test_labels[i] == "-":
+                continue
+            total_count = total_count + 1
+
             ascii_number = y1[i].argmax()
             onset_number = y2[i].argmax()
             nucleus_number = y3[i].argmax()
@@ -326,11 +334,22 @@ def main():
             else:
                 char = None
 
-            print(f"{char}, accuracy:{round(accuracy * 100, 2)}")
-            cv.imshow("hi", resized_images[i])
-            k = cv.waitKey()
-            if k == ord("c"):
-                cv.imwrite("k.jpg", resized_images[i])
+            print(f"Label:{test_labels[i]}, Predict:{char}, accuracy:{round(accuracy * 100, 2)}")
+
+            if char == test_labels[i]:
+                hit_count = hit_count + 1
+            else:
+                pass
+                """
+                cv.imshow("hi", resized_images[i])
+                k = cv.waitKey()
+                if k == ord("c"):
+                    cv.imwrite("k.jpg", resized_images[i])
+                """
+
+        print(f"total_count: {total_count}")
+        print(f"hit_count: {hit_count}")
+        print(f"accuracy: {hit_count/total_count}")
 
 
 main()
