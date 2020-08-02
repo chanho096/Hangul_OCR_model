@@ -83,3 +83,29 @@ def json_data_loader(data_path, json_path):
     return file_names, label_text
 
 
+def hand_written_data_loader(cg, data_path, json_path):
+    file_names = []
+    label_text = []
+
+    basename = os.path.basename(data_path)
+
+    with open(json_path, encoding='UTF8') as json_file:
+        json_data = json.load(json_file)
+        size = len(json_data['images'])
+
+        for i in range(0, size):
+            if not os.path.exists(os.path.join(data_path, json_data['images'][i]['file_name'])):
+                continue
+
+            file_names.append(os.path.join(basename, json_data['images'][i]['file_name']))
+            label_text.append(json_data['annotations'][i]['text'])
+
+    print(f"hand_written data loaded: {len(file_names)}")
+
+    label_number = []
+    for i in range(0, len(label_text)):
+        label_number.append(cg.char_to_number(label_text[i]))
+
+    return file_names, np.array(label_number, dtype=np.int)
+
+

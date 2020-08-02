@@ -27,13 +27,13 @@ LOAD_FROM_NPY = True
 LOAD_FROM_CREATED = False
 CREATE_DATA = False
 SHUFFLE_DATA = False
-AUGMENTATION = True
+AUGMENTATION = False
 BACKBONE_TRAINING = True
 HANGUL_MODEL_TRAINING = True
 ASCII_MODEL_TRAINING = False
 
-PREDICTION = True
-TRAINING = False
+PREDICTION = False
+TRAINING = True
 
 
 class CustomGenerator(tf.keras.utils.Sequence):
@@ -59,7 +59,6 @@ class CustomGenerator(tf.keras.utils.Sequence):
             image = cv.resize(image, dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
             if self.augmentation is not None:
                 image = self.augmentation.randomize(image, INPUT_SHAPE[0], INPUT_SHAPE[1])
-
             image_list[i] = image
         batch_x = np.array(image_list) / 255
 
@@ -67,8 +66,8 @@ class CustomGenerator(tf.keras.utils.Sequence):
         size = label_number.shape[0]
         y1 = np.zeros((size, self.class_count[0]))
         y2 = np.zeros((size, self.class_count[1]))
-        y3 = np.zeros((size, self.class_count[2]))
-        y4 = np.zeros((size, self.class_count[3]))
+        y3 = np.zeros((size, self.class_count[3]))
+        y4 = np.zeros((size, self.class_count[2]))
 
         for i in range(0, size):
             if label_number[i] < hangul.HANGUL_COUNT:
@@ -76,15 +75,16 @@ class CustomGenerator(tf.keras.utils.Sequence):
 
                 y1[i] = tf.keras.utils.to_categorical(0, self.class_count[0])
                 y2[i] = tf.keras.utils.to_categorical(onset_number + 1, self.class_count[1])
-                y3[i] = tf.keras.utils.to_categorical(nucleus_number + 1, self.class_count[2])
-                y4[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
+                y3[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
+                y4[i] = tf.keras.utils.to_categorical(nucleus_number + 1, self.class_count[2])
+
             else:
                 ascii_number = label_number[i] - hangul.HANGUL_COUNT + 1
 
                 y1[i] = tf.keras.utils.to_categorical(ascii_number, self.class_count[0])
                 y2[i] = tf.keras.utils.to_categorical(0, self.class_count[1])
-                y3[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
-                y4[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
+                y3[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
+                y4[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
 
         batch_y = [y1, y2, y3, y4]
 
@@ -109,6 +109,8 @@ def main():
     # set data path
     etri_data_path = os.path.join(data_dir, "syllable")
     etri_json_path = os.path.join(data_dir, "printed_data_info.json")
+    hw_data_path = os.path.join(data_dir, "hand_written_syllable")
+    hw_json_path = os.path.join(data_dir, "handwriting_data_info1.json")
     created_data_path = os.path.join(data_dir, "created")
 
     # create data
@@ -131,7 +133,8 @@ def main():
 
     else:
         # load data
-        file_list, label_number = loader.data_loader(cg, created_data_path, etri_data_path, etri_json_path)
+        # file_list, label_number = loader.data_loader(cg, created_data_path, etri_data_path, etri_json_path)
+        file_list, label_number = loader.hand_written_data_loader(cg, hw_data_path, hw_json_path)
 
         # split data
         file_list_shuffled, label_shuffled = shuffle(file_list, label_number)
@@ -157,9 +160,8 @@ def main():
     else:
         augmentation = aug.AugmentationGenerator()
         augmentation.ORIGINAL_RATE = 0.2
-        augmentation.SHEARING_PROBABILITY = 0.5
-        augmentation.RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.5
-        augmentation.MEDIAN_BLURRING_PROBABILITY = 0.1
+        augmentation.SHEARING_PROBABILITY = 0.3
+        augmentation.RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
         augmentation.NOISING_PROBABILITY = 0.3
 
     # custom generator
@@ -177,31 +179,40 @@ def main():
 
     # ----- model design -----
 
-    # set Resnet50 backbone model
+    # set Mobilenet backbone model
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
-    backbone_model = tf.keras.applications.resnet50.ResNet50 \
-        (weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
+    """
+    backbone_model = tf.keras.applications.resnet50.ResNet50(
+        weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
+    """
+    backbone_model = tf.keras.applications.MobileNetV2(
+        weights="imagenet", input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
     backbone_output = backbone_model.output
 
     # set output layer
-    x = backbone_output
+    # with CC (Classifier Chain)
+    chain_layer = backbone_output
+    x = chain_layer
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_1_1_NEURON_COUNT, activation='relu')(x)
     onset_layer = tf.keras.layers.Dense(hangul.ONSET_COUNT + 1, activation='softmax', name='onset_output')(x)
 
-    x = backbone_output
+    chain_layer = tf.keras.layers.concatenate([chain_layer, onset_layer])
+    x = chain_layer
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_2_1_NEURON_COUNT, activation='relu')(x)
-    nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_COUNT + 1,
-                                          activation='softmax', name='nucleus_output')(x)
+    coda_layer = tf.keras.layers.Dense(hangul.CODA_COUNT, activation='softmax', name='coda_output')(x)
 
-    x = backbone_output
+    chain_layer = tf.keras.layers.concatenate([chain_layer, coda_layer])
+    x = chain_layer
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(LAYER_3_1_NEURON_COUNT, activation='relu')(x)
-    coda_layer = tf.keras.layers.Dense(hangul.CODA_COUNT, activation='softmax', name='coda_output')(x)
+
+    nucleus_layer = tf.keras.layers.Dense(hangul.NUCLEUS_COUNT + 1,
+                                          activation='softmax', name='nucleus_output')(x)
 
     x = backbone_output
     x = tf.keras.layers.Dropout(0.2)(x)
@@ -213,7 +224,7 @@ def main():
     # set training model
     hangul_model = tf.keras.Model(
         inputs=[input_layer],
-        outputs=[onset_layer, nucleus_layer, coda_layer]
+        outputs=[onset_layer, coda_layer, nucleus_layer]
     )
     hangul_model.trainable = HANGUL_MODEL_TRAINING
 
@@ -230,6 +241,7 @@ def main():
     )
 
     model.summary()
+    # tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
 
     # load latest trained weight
     latest_weight = tf.train.latest_checkpoint(checkpoint_dir)
@@ -260,8 +272,8 @@ def main():
                   loss={
                       "ascii_output": tf.keras.losses.CategoricalCrossentropy(),
                       "onset_output": tf.keras.losses.CategoricalCrossentropy(),
-                      "nucleus_output": tf.keras.losses.CategoricalCrossentropy(),
-                      "coda_output": tf.keras.losses.CategoricalCrossentropy()
+                      "coda_output": tf.keras.losses.CategoricalCrossentropy(),
+                      "nucleus_output": tf.keras.losses.CategoricalCrossentropy()
                   },
                   metrics=['accuracy'], loss_weights=loss_weights)
 
@@ -290,7 +302,7 @@ def main():
         resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
         for i in range(0, test_size):
             image = cv.resize(test_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
-            image[image < 100] = 0
+            # image[image < 100] = 0
             resized_images[i] = image
         input_x = resized_images / 255
 
