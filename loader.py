@@ -53,7 +53,6 @@ def create_data(cg, tg, font_dir, created_data_path):
 
 def created_data_loader(created_data_path, cg):
     dirs = os.listdir(created_data_path)
-    basename = os.path.basename(created_data_path)
 
     file_names = []
     label_number = []
@@ -61,7 +60,7 @@ def created_data_loader(created_data_path, cg):
 
     for font_dir in dirs:
         for i in range(0, count):
-            file_name = os.path.join(os.path.join(basename, font_dir), f"{i}.png")
+            file_name = os.path.join(os.path.join(created_data_path, font_dir), f"{i}.png")
             file_names.append(file_name)
             label_number.append(i)
 
@@ -72,12 +71,10 @@ def json_data_loader(data_path, json_path):
     file_names = []
     label_text = []
 
-    basename = os.path.basename(data_path)
-
     with open(json_path, encoding='UTF8') as json_file:
         json_data = json.load(json_file)
         for i in range(0, 532659):
-            file_names.append(os.path.join(basename, json_data['images'][i]['file_name']))
+            file_names.append(os.path.join(data_path, json_data['images'][i]['file_name']))
             label_text.append(json_data['annotations'][i]['text'])
 
     return file_names, label_text
@@ -87,8 +84,6 @@ def hand_written_data_loader(cg, data_path, json_path):
     file_names = []
     label_text = []
 
-    basename = os.path.basename(data_path)
-
     with open(json_path, encoding='UTF8') as json_file:
         json_data = json.load(json_file)
         size = len(json_data['images'])
@@ -97,7 +92,7 @@ def hand_written_data_loader(cg, data_path, json_path):
             if not os.path.exists(os.path.join(data_path, json_data['images'][i]['file_name'])):
                 continue
 
-            file_names.append(os.path.join(basename, json_data['images'][i]['file_name']))
+            file_names.append(os.path.join(data_path, json_data['images'][i]['file_name']))
             label_text.append(json_data['annotations'][i]['text'])
 
     print(f"hand_written data loaded: {len(file_names)}")

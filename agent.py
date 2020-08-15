@@ -23,11 +23,11 @@ LAYER_4_1_NEURON_COUNT = 512
 
 EPOCH_COUNT = 5
 TEST_RATE = 0.05
-LOAD_FROM_NPY = True
+LOAD_FROM_NPY = False
 LOAD_FROM_CREATED = False
 CREATE_DATA = False
 SHUFFLE_DATA = False
-AUGMENTATION = False
+AUGMENTATION = True
 BACKBONE_TRAINING = True
 HANGUL_MODEL_TRAINING = True
 ASCII_MODEL_TRAINING = False
@@ -45,24 +45,41 @@ class CustomGenerator(tf.keras.utils.Sequence):
         self.class_count = class_count
         self.augmentation = augmentation
 
+        self.avg1 = 0
+        self.avg2 = 0
+        self.first = 0
+        self.last = 0
+        self.cnt = 0
+
     def __len__(self):
         return (np.ceil(len(self.file_list) / float(self.batch_size))).astype(np.int)
 
     def __getitem__(self, idx):
-        file_list = self.file_list[idx * self.batch_size: (idx + 1) * self.batch_size]
-        label_number = self.label_number[idx * self.batch_size: (idx + 1) * self.batch_size]
+        batch_x = self.get_batch_x(idx)
+        batch_y = self.get_batch_y(idx)
 
+        return batch_x, batch_y
+
+    def get_batch_x(self, idx):
         # set batch_x
-        image_list = [cv.imread(os.path.join(self.data_dir, file_name)) for file_name in file_list]
+        file_list = self.file_list[idx * self.batch_size: (idx + 1) * self.batch_size]
+
+        image_list = [cv.imread(file_name) for file_name in file_list]
         for i in range(0, len(image_list)):
             image = image_list[i]
             image = cv.resize(image, dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
             if self.augmentation is not None:
                 image = self.augmentation.randomize(image, INPUT_SHAPE[0], INPUT_SHAPE[1])
             image_list[i] = image
+
         batch_x = np.array(image_list) / 255
 
+        return batch_x
+
+    def get_batch_y(self, idx):
         # set batch_y
+        label_number = self.label_number[idx * self.batch_size: (idx + 1) * self.batch_size]
+
         size = label_number.shape[0]
         y1 = np.zeros((size, self.class_count[0]))
         y2 = np.zeros((size, self.class_count[1]))
@@ -87,8 +104,7 @@ class CustomGenerator(tf.keras.utils.Sequence):
                 y4[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
 
         batch_y = [y1, y2, y3, y4]
-
-        return batch_x, batch_y
+        return batch_y
 
 
 def main():
@@ -97,7 +113,7 @@ def main():
     font_dir = os.path.join(current_dir, 'font')
     checkpoint_dir = os.path.join(current_dir, 'hangul_OCR_training')
     model_dir = os.path.join(current_dir, 'model')
-    data_dir = "C:\Workdata"
+    data_dir = "G:\hangul_OCR"
 
     # get generate class
     cg = gen.CharacterGenerator()
@@ -109,8 +125,8 @@ def main():
     # set data path
     etri_data_path = os.path.join(data_dir, "syllable")
     etri_json_path = os.path.join(data_dir, "printed_data_info.json")
-    hw_data_path = os.path.join(data_dir, "hand_written_syllable")
-    hw_json_path = os.path.join(data_dir, "handwriting_data_info1.json")
+    # hw_data_path = os.path.join(data_dir, "hand_written_syllable")
+    # hw_json_path = os.path.join(data_dir, "handwriting_data_info1.json")
     created_data_path = os.path.join(data_dir, "created")
 
     # create data
@@ -133,8 +149,8 @@ def main():
 
     else:
         # load data
-        # file_list, label_number = loader.data_loader(cg, created_data_path, etri_data_path, etri_json_path)
-        file_list, label_number = loader.hand_written_data_loader(cg, hw_data_path, hw_json_path)
+        file_list, label_number = loader.data_loader(cg, created_data_path, etri_data_path, etri_json_path)
+        # file_list, label_number = loader.hand_written_data_loader(cg, hw_data_path, hw_json_path)
 
         # split data
         file_list_shuffled, label_shuffled = shuffle(file_list, label_number)
@@ -181,12 +197,8 @@ def main():
 
     # set Mobilenet backbone model
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
-    """
     backbone_model = tf.keras.applications.resnet50.ResNet50(
         weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
-    """
-    backbone_model = tf.keras.applications.MobileNetV2(
-        weights="imagenet", input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
     backbone_output = backbone_model.output
 
     # set output layer
@@ -241,7 +253,7 @@ def main():
     )
 
     model.summary()
-    # tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
+    tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
 
     # load latest trained weight
     latest_weight = tf.train.latest_checkpoint(checkpoint_dir)
@@ -281,10 +293,10 @@ def main():
 
     # training
     if TRAINING:
-        model.fit_generator(generator=training_batch_generator,
-                            epochs=EPOCH_COUNT,
-                            callbacks=[tensorboard_callback, checkpoint_callback],
-                            validation_data=test_batch_generator)
+        model.fit(training_batch_generator,
+                  epochs=EPOCH_COUNT,
+                  callbacks=[tensorboard_callback, checkpoint_callback],
+                  validation_data=test_batch_generator, shuffle=False)
 
         # save model
         model_path = os.path.join(model_dir, 'hangul_OCR_model.h5')
@@ -364,4 +376,5 @@ def main():
         print(f"accuracy: {hit_count/total_count}")
 
 
-main()
+if __name__ == '__main__':
+    main()

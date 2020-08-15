@@ -297,3 +297,73 @@ class AugmentationGenerator:
 
         return b_image
 
+
+class SubAugmentationGenerator:
+    ORIGINAL_RATE = 0.2
+    RANDOM_MORPHOLOGICAL_TRANSFORM_PROBABILITY = 0.0
+    RESIZING_PROBABILITY = 0.0
+    SHEARING_PROBABILITY = 0.0
+    MEDIAN_BLURRING_PROBABILITY = 0.0
+    NOISING_PROBABILITY = 0.0
+
+    def __init__(self, seed=None):
+        if seed is None:
+            self.seed = 0
+        else:
+            self.seed = seed
+        np.random.seed(seed)
+
+    def randomize(self, image, width, height):
+        # 이미지를 이진 이미지로 변환
+        image = image.copy()
+        b_image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        b_image = cv.threshold(b_image, 0, 255, cv.THRESH_BINARY_INV+cv.THRESH_OTSU)
+
+        p = np.random.uniform(0, 1, 5)
+        # Original
+        if p[0] < self.ORIGINAL_RATE:
+            return image
+
+        # Shearing
+        if p[1] < self.SHEARING_PROBABILITY:
+            shear_weight = np.random.uniform(0, 1, 1) - 0.5
+            shear_weight = shear_weight * 1.6  # shear_weight 는 [-0.8 ~ 0.8]
+            image = shearing(image, shear_weight)
+
+        # Character Resize
+        scale = np.random.uniform(0.7, 1, 1)
+        w = int(width * scale)
+        h = int(height * scale)
+        b_image = cv.resize(b_image, (w, h))
+
+        # Random Padding
+        x_length = width - w
+        y_length = height - h
+
+        left = int(x_length / 2)
+        right = left + x_length % 2
+        top = int(y_length / 2)
+        bottom = top + y_length % 2
+
+        if left > 0:
+            random_dx = np.random.randint(-left, left)
+            left = left - random_dx
+            right = right + random_dx
+
+        if top > 0:
+            random_dy = np.random.randint(-top, top)
+            top = top - random_dy
+            bottom = bottom + random_dy
+
+        b_image = cv.copyMakeBorder(b_image, top, bottom, left, right, cv.BORDER_CONSTANT, 0)
+
+        # Noising
+        if p[4] < self.NOISING_PROBABILITY:
+            noise_level = np.random.uniform(0.05, 0.15, 1)[0]
+            b_image = noising(b_image, noise_level)
+
+        # Return
+        b_image = to_output_image(b_image)
+
+        return image
+
