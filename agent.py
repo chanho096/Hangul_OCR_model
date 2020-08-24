@@ -57,7 +57,6 @@ class CustomGenerator(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         batch_x = self.get_batch_x(idx)
         batch_y = self.get_batch_y(idx)
-
         return batch_x, batch_y
 
     def get_batch_x(self, idx):
@@ -103,7 +102,7 @@ class CustomGenerator(tf.keras.utils.Sequence):
                 y3[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
                 y4[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
 
-        batch_y = [y1, y2, y3, y4]
+        batch_y = (y1, y2, y3, y4)
         return batch_y
 
 
@@ -197,7 +196,7 @@ def main():
 
     # set Mobilenet backbone model
     input_layer = tf.keras.layers.Input(shape=INPUT_SHAPE)
-    backbone_model = tf.keras.applications.resnet50.ResNet50(
+    backbone_model = tf.keras.applications.DenseNet201(
         weights='imagenet', input_shape=INPUT_SHAPE, input_tensor=input_layer, include_top=False, pooling='avg')
     backbone_output = backbone_model.output
 
@@ -253,7 +252,7 @@ def main():
     )
 
     model.summary()
-    tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
+    # tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
 
     # load latest trained weight
     latest_weight = tf.train.latest_checkpoint(checkpoint_dir)
