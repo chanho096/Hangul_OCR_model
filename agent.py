@@ -21,7 +21,7 @@ LAYER_2_1_NEURON_COUNT = 512
 LAYER_3_1_NEURON_COUNT = 512
 LAYER_4_1_NEURON_COUNT = 512
 
-EPOCH_COUNT = 5
+EPOCH_COUNT = 1
 TEST_RATE = 0.05
 LOAD_FROM_NPY = False
 LOAD_FROM_CREATED = False
@@ -33,12 +33,11 @@ HANGUL_MODEL_TRAINING = True
 ASCII_MODEL_TRAINING = False
 
 PREDICTION = True
-TRAINING = False
+TRAINING = True
 
 
 class CustomGenerator(tf.keras.utils.Sequence):
-    def __init__(self, data_dir, file_list, label_number, batch_size, class_count, augmentation=None):
-        self.data_dir = data_dir
+    def __init__(self, file_list, label_number, batch_size, class_count, augmentation=None):
         self.file_list = file_list
         self.label_number = label_number
         self.batch_size = batch_size
@@ -57,22 +56,6 @@ class CustomGenerator(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         batch_x = self.get_batch_x(idx)
         batch_y, k = self.get_batch_y(idx)
-
-        cg = gen.CharacterGenerator()
-        k_n = cg.number_to_char(k[0])
-        print(k_n)
-        y2 = batch_y[1][0]
-        y3 = batch_y[3][0]
-        y4 = batch_y[2][0]
-        print(y2, y3, y4)
-        onset_number = y2.argmax() - 1
-        nucleus_number = y3.argmax() - 1
-        coda_number = y4.argmax()
-        char_number = hangul.hangul_encode_to_number(onset_number, nucleus_number, coda_number)
-        print(cg.number_to_char(char_number))
-
-        cv.imshow("hi", batch_x[0])
-        cv.waitKey()
 
         return batch_x, batch_y
 
@@ -99,8 +82,8 @@ class CustomGenerator(tf.keras.utils.Sequence):
         size = label_number.shape[0]
         y1 = np.zeros((size, self.class_count[0]))
         y2 = np.zeros((size, self.class_count[1]))
-        y3 = np.zeros((size, self.class_count[3]))
-        y4 = np.zeros((size, self.class_count[2]))
+        y3 = np.zeros((size, self.class_count[2]))
+        y4 = np.zeros((size, self.class_count[3]))
 
         for i in range(0, size):
             if label_number[i] < hangul.HANGUL_COUNT:
@@ -197,13 +180,13 @@ def main():
         augmentation.NOISING_PROBABILITY = 0.3
 
     # custom generator
-    training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
+    training_batch_generator = CustomGenerator(x_train_file_list, y_train,
                                                batch_size=BATCH_SIZE, augmentation=augmentation,
                                                class_count=[character_count - hangul.HANGUL_COUNT + 1,
                                                             hangul.ONSET_COUNT + 1, hangul.CODA_COUNT,
                                                             hangul.NUCLEUS_COUNT + 1])
 
-    test_batch_generator = CustomGenerator(data_dir, x_test_file_list, y_test,
+    test_batch_generator = CustomGenerator(x_test_file_list, y_test,
                                            batch_size=BATCH_SIZE, augmentation=None,
                                            class_count=[character_count - hangul.HANGUL_COUNT + 1,
                                                         hangul.ONSET_COUNT + 1, hangul.CODA_COUNT,
@@ -268,7 +251,7 @@ def main():
         outputs=[ascii_model.output] + hangul_model.output
     )
 
-    model.summary()
+    # model.summary()
     # tf.keras.utils.plot_model(model, "model.png", show_shapes=False)
 
     # load latest trained weight
