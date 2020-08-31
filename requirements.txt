@@ -4,4 +4,3 @@ tensorflow==2.1
 scipy
 sklearn
 opencv-python
-pydot

@@ -6,7 +6,6 @@ import cv2 as cv
 
 
 def data_loader(cg, created_data_path, data_path, json_path):
-
     fl1, lb1 = created_data_loader(created_data_path, cg)
     fl2, lb2 = json_data_loader(data_path, json_path)
     for i in range(0, len(lb2)):
@@ -73,6 +72,7 @@ def json_data_loader(data_path, json_path):
 
     with open(json_path, encoding='UTF8') as json_file:
         json_data = json.load(json_file)
+
         for i in range(0, 532659):
             file_names.append(os.path.join(data_path, json_data['images'][i]['file_name']))
             label_text.append(json_data['annotations'][i]['text'])

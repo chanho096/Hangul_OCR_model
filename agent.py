@@ -32,8 +32,8 @@ BACKBONE_TRAINING = True
 HANGUL_MODEL_TRAINING = True
 ASCII_MODEL_TRAINING = False
 
-PREDICTION = False
-TRAINING = True
+PREDICTION = True
+TRAINING = False
 
 
 class CustomGenerator(tf.keras.utils.Sequence):
@@ -56,7 +56,24 @@ class CustomGenerator(tf.keras.utils.Sequence):
 
     def __getitem__(self, idx):
         batch_x = self.get_batch_x(idx)
-        batch_y = self.get_batch_y(idx)
+        batch_y, k = self.get_batch_y(idx)
+
+        cg = gen.CharacterGenerator()
+        k_n = cg.number_to_char(k[0])
+        print(k_n)
+        y2 = batch_y[1][0]
+        y3 = batch_y[3][0]
+        y4 = batch_y[2][0]
+        print(y2, y3, y4)
+        onset_number = y2.argmax() - 1
+        nucleus_number = y3.argmax() - 1
+        coda_number = y4.argmax()
+        char_number = hangul.hangul_encode_to_number(onset_number, nucleus_number, coda_number)
+        print(cg.number_to_char(char_number))
+
+        cv.imshow("hi", batch_x[0])
+        cv.waitKey()
+
         return batch_x, batch_y
 
     def get_batch_x(self, idx):
@@ -91,19 +108,19 @@ class CustomGenerator(tf.keras.utils.Sequence):
 
                 y1[i] = tf.keras.utils.to_categorical(0, self.class_count[0])
                 y2[i] = tf.keras.utils.to_categorical(onset_number + 1, self.class_count[1])
-                y3[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[3])
-                y4[i] = tf.keras.utils.to_categorical(nucleus_number + 1, self.class_count[2])
+                y3[i] = tf.keras.utils.to_categorical(coda_number, self.class_count[2])
+                y4[i] = tf.keras.utils.to_categorical(nucleus_number + 1, self.class_count[3])
 
             else:
                 ascii_number = label_number[i] - hangul.HANGUL_COUNT + 1
 
                 y1[i] = tf.keras.utils.to_categorical(ascii_number, self.class_count[0])
                 y2[i] = tf.keras.utils.to_categorical(0, self.class_count[1])
-                y3[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
-                y4[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
+                y3[i] = tf.keras.utils.to_categorical(0, self.class_count[2])
+                y4[i] = tf.keras.utils.to_categorical(0, self.class_count[3])
 
         batch_y = (y1, y2, y3, y4)
-        return batch_y
+        return batch_y, label_number
 
 
 def main():
@@ -183,14 +200,14 @@ def main():
     training_batch_generator = CustomGenerator(data_dir, x_train_file_list, y_train,
                                                batch_size=BATCH_SIZE, augmentation=augmentation,
                                                class_count=[character_count - hangul.HANGUL_COUNT + 1,
-                                                            hangul.ONSET_COUNT + 1, hangul.NUCLEUS_COUNT + 1,
-                                                            hangul.CODA_COUNT])
+                                                            hangul.ONSET_COUNT + 1, hangul.CODA_COUNT,
+                                                            hangul.NUCLEUS_COUNT + 1])
 
     test_batch_generator = CustomGenerator(data_dir, x_test_file_list, y_test,
                                            batch_size=BATCH_SIZE, augmentation=None,
                                            class_count=[character_count - hangul.HANGUL_COUNT + 1,
-                                                        hangul.ONSET_COUNT + 1, hangul.NUCLEUS_COUNT + 1,
-                                                        hangul.CODA_COUNT])
+                                                        hangul.ONSET_COUNT + 1, hangul.CODA_COUNT,
+                                                        hangul.NUCLEUS_COUNT + 1])
 
     # ----- model design -----
 
@@ -295,7 +312,7 @@ def main():
         model.fit(training_batch_generator,
                   epochs=EPOCH_COUNT,
                   callbacks=[tensorboard_callback, checkpoint_callback],
-                  validation_data=test_batch_generator, shuffle=False)
+                  validation_data=test_batch_generator, shuffle=True)
 
         # save model
         model_path = os.path.join(model_dir, 'hangul_OCR_model.h5')
@@ -313,7 +330,8 @@ def main():
         resized_images = np.zeros((test_size, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype=np.float64)
         for i in range(0, test_size):
             image = cv.resize(test_images[i], dsize=(INPUT_SHAPE[0], INPUT_SHAPE[1]), interpolation=cv.INTER_CUBIC)
-            # image[image < 100] = 0
+            image = aug.to_binary_image(image)
+            image = aug.to_output_image(image)
             resized_images[i] = image
         input_x = resized_images / 255
 
@@ -333,8 +351,8 @@ def main():
 
             ascii_number = y1[i].argmax()
             onset_number = y2[i].argmax()
-            nucleus_number = y3[i].argmax()
-            coda_number = y4[i].argmax()
+            coda_number = y3[i].argmax()
+            nucleus_number = y4[i].argmax()
 
             ascii_number = 0
             if ascii_number != 0:
@@ -345,12 +363,12 @@ def main():
             elif onset_number == 0 or nucleus_number == 0:
                 # no character
                 char_number = -1
-                accuracy = y1[i][ascii_number] * y2[i][onset_number] * y3[i][nucleus_number] * y4[i][coda_number]
+                accuracy = y1[i][ascii_number] * y2[i][onset_number] * y3[i][coda_number] * y4[i][nucleus_number]
 
             else:
                 # hangul character
                 char_number = hangul.hangul_encode_to_number(onset_number - 1, nucleus_number - 1, coda_number)
-                accuracy = y2[i][onset_number] * y3[i][nucleus_number] * y4[i][coda_number]
+                accuracy = y2[i][onset_number] * y3[i][coda_number] * y4[i][nucleus_number]
 
             if char_number != -1:
                 char = cg.number_to_char(char_number)
